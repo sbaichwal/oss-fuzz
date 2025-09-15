@@ -1,0 +1,6 @@
+# tools/ossfuzz-onboard/requirements.txt
+python-dotenv
+google-genai
+typer
+pyyaml
+atheris
