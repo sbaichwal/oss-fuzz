@@ -23,7 +23,7 @@ import requests
 import subprocess
 from enum import Enum
 
-import bad_patch
+import bad_patch, logic_error_patch
 
 logger = logging.getLogger(__name__)
 
@@ -233,7 +233,6 @@ def check_cached_replay(project,
                        container_output=container_output)
 
   start = time.time()
-  failed = []
   base_cmd = 'export PATH=/ccache/bin:$PATH && rm -rf /out/* && compile'
   cmd = [
       'docker',
@@ -264,11 +263,13 @@ def check_cached_replay(project,
     for bad_patch_name, bad_patch_map in bad_patch.BAD_PATCH_GENERATOR.items():
       # Generate bad patch command using different approaches
       expected_rc = bad_patch_map['rc']
-      bad_patch_command = f'python3 -m pip install -r /chronos/requirements.txt && python3 /chronos/bad_patch.py {bad_patch_name}'
+      bad_patch_command = (
+          'python3 -m pip install -r /chronos/requirements.txt && '
+          f'python3 /chronos/bad_patch.py {bad_patch_name}')
       cmd_to_run = cmd[:]
       cmd_to_run.append(
           f'"set -euo pipefail && {bad_patch_command} && {base_cmd}"')
-      print(' '.join(cmd_to_run))
+
       # Run the cached replay script with bad patches
       result = subprocess.run(' '.join(cmd_to_run),
                               shell=True,
@@ -304,7 +305,8 @@ def check_cached_replay(project,
 def check_test(project,
                sanitizer='address',
                container_output='stdout',
-               run_full_cache_replay=False):
+               run_full_cache_replay=False,
+               integrity_test=False):
   """Run the `run_tests.sh` script for a specific project. Will
     build a cached container first."""
 
@@ -329,13 +331,6 @@ def check_test(project,
         project, sanitizer=sanitizer, container_output=container_output):
       return False
 
-  # Run the test script
-  cmd = [
-      'docker', 'run', '--rm', '--network', 'none', '-ti',
-      _get_project_cached_named(project, sanitizer), '/bin/bash', '-c',
-      '"chmod +x /src/run_tests.sh && /src/run_tests.sh"'
-  ]
-
   if container_output == 'file':
     out_idx = 0
     stdout_file = os.path.join('projects', project, 'stdout.%d.out' % (out_idx))
@@ -353,27 +348,127 @@ def check_test(project,
     stdout_fp = None
     stderr_fp = None
 
+  # Run the test script
   start = time.time()
-  try:
-    subprocess.check_call(' '.join(cmd),
-                          shell=True,
-                          stdout=stdout_fp,
-                          stderr=stderr_fp)
-    succeeded = True
-    if container_output == 'file':
-      stdout_fp.close()
-      stderr_fp.close()
-  except subprocess.CalledProcessError as e:
-    succeeded = False
-    if container_output == 'file':
-      stdout_fp.close()
-      stderr_fp.close()
+  base_cmd = 'chmod +x /src/run_tests.sh && /src/run_tests.sh'
+
+  cmd = [
+      'docker',
+      'run',
+      '--rm',
+      '-ti',
+      '-v=' + os.path.join(os.getcwd(), 'infra', 'experimental', 'chronos') +
+      ':/chronos',
+      _get_project_cached_named(project, sanitizer),
+      '/bin/bash',
+      '-c',
+  ]
+
+  if integrity_test:
+    # Patch the code with some logic error and see if build_test able to detect them.
+    failed = []
+    for logic_patch_name, logic_patch_map in logic_error_patch.LOGIC_ERROR_PATCH_GENERATOR.items(
+    ):
+      expected_result = logic_patch_map['result']
+      patch_command = (
+          'python3 -m pip install -r /chronos/requirements.txt && '
+          f'python3 /chronos/logic_error_patch.py {logic_patch_name} && '
+          'compile')
+      cmd_to_run = cmd[:]
+      cmd_to_run.append(f'"set -euo pipefail && {patch_command} && {base_cmd}"')
+
+      # Run logic patch and check script
+      try:
+        subprocess.check_call(' '.join(cmd_to_run),
+                              shell=True,
+                              stdout=stdout_fp,
+                              stderr=stderr_fp)
+        if not expected_result:
+          failed.append(logic_patch_name)
+      except:
+        if expected_result:
+          failed.append(logic_patch_name)
+
+    if failed:
+      succeeded = False
+      logger.info('%s check failed to detect these logic patches: %s', project,
+                  ' '.join(failed))
+    else:
+      succeeded = True
+  else:
+    # Run normal build_test
+    cmd.append(f'"{base_cmd}"')
+    try:
+      subprocess.check_call(' '.join(cmd),
+                            shell=True,
+                            stdout=stdout_fp,
+                            stderr=stderr_fp)
+      succeeded = True
+    except subprocess.CalledProcessError as e:
+      succeeded = False
+
   end = time.time()
+  if container_output == 'file':
+    stdout_fp.close()
+    stderr_fp.close()
 
   logger.info('%s test completion %s: Duration of run_tests.sh: %.2f seconds',
               project, 'failed' if not succeeded else 'succeeded',
               (end - start))
+
   return succeeded
+
+
+def check_run_tests_script(project,
+                           sanitizer='address',
+                           ignore_new_files=False,
+                           container_output='stdout',
+                           silent_replays=False):
+  """Checks if the run_tests.sh changes the source files in the current directory."""
+  build_project_image(project, container_output=container_output)
+  build_cached_project(project,
+                       sanitizer=sanitizer,
+                       container_output=container_output)
+
+  ignore = ''
+  if ignore_new_files:
+    ignore = '--ignore-new-files'
+
+  start = time.time()
+  cmd = [
+      'docker', 'run', '--rm',
+      '-v=' + os.path.join(os.getcwd(), 'infra', 'experimental', 'chronos') +
+      ':/chronos',
+      '--name=' + project + '-origin-' + sanitizer + '-run-tests-check',
+      _get_project_cached_named(project, sanitizer), '/bin/bash', '-c',
+      f'"python3 -m pip install -r /chronos/requirements.txt && python3 /chronos/run_tests_check.py {ignore}"'
+  ]
+
+  # Configure output
+  if silent_replays:
+    stdout_fp = subprocess.DEVNULL
+    stderr_fp = subprocess.DEVNULL
+  else:
+    stdout_fp = None
+    stderr_fp = None
+
+  # Normal run with no integrity check
+  result = subprocess.run(' '.join(cmd), shell=True)
+  #                          stdout=stdout_fp,
+  #                          stderr=stderr_fp)
+
+  end = time.time()
+  logger.info('%s run_test.sh check completion time: %.2f seconds', project,
+              (end - start))
+
+  if not result.returncode:
+    logger.info(
+        '%s run_test.sh does not alter any files or directories content.',
+        project)
+  else:
+    logger.info(
+        'Error: %s run_test.sh does alter files or directories content.',
+        project)
 
 
 def _get_project_language(project):
@@ -565,6 +660,12 @@ def parse_args():
       help=
       'If set, will run the full cache replay instead of just checking the script.'
   )
+  check_test_parser.add_argument(
+      '--check-patch-integrity',
+      action='store_true',
+      help=
+      'If set, will patch and test with logic errors to ensure build integrity.'
+  )
 
   check_replay_script_parser = subparsers.add_parser(
       'check-replay-script',
@@ -587,6 +688,21 @@ def parse_args():
   check_replay_script_integrity_parser.add_argument(
       'project', help='The name of the project to check.')
   check_replay_script_integrity_parser.add_argument(
+      '--sanitizer',
+      default='address',
+      help='The sanitizer to use for the cached build (default: address).')
+
+  check_run_tests_script_parser = subparsers.add_parser(
+      'check-run-tests-script',
+      help=
+      'Checks if the run_tests.sh alter files in the current WORKDIR after execution'
+  )
+
+  check_run_tests_script_parser.add_argument(
+      'project', help='The name of the project to check.')
+  check_run_tests_script_parser.add_argument('--ignore-new-files',
+                                             action='store_true')
+  check_run_tests_script_parser.add_argument(
       '--sanitizer',
       default='address',
       help='The sanitizer to use for the cached build (default: address).')
@@ -679,7 +795,7 @@ def main():
     for project in projects_to_analyse:
       logger.info('%s checking run_tests', project)
       check_test(project, args.sanitizer, args.container_output,
-                 args.run_full_cache_replay)
+                 args.run_full_cache_replay, args.check_patch_integrity)
   if args.command == 'check-replay-script':
     check_cached_replay(args.project, args.sanitizer)
   if args.command == 'check-replay-script-integrity':
@@ -700,6 +816,8 @@ def main():
                           silent_replays=args.silent_replays)
   if args.command == 'extract-test-coverage':
     extract_test_coverage(args.project)
+  if args.command == 'check-run-tests-script':
+    check_run_tests_script(args.project, args.sanitizer, args.ignore_new_files)
 
 
 if __name__ == '__main__':
