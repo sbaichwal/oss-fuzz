@@ -1,5 +1,6 @@
 import os
-
+## Note: Try to reset the project directory by moving everything back 
+##       by using the "mv temp_projects/* projects/" command
 OSS_FUZZ_DIR = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 target_dir =  os.path.join(OSS_FUZZ_DIR, "projects/")
@@ -29,3 +30,4 @@ for project in temp_dir_projects:
             os.rename(project_path, os.path.join(target_dir, project))
         else:
             print(f"Error: {project_path} is not a directory.")
+
