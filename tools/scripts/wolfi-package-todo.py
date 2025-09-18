@@ -6,9 +6,12 @@ OSS_FUZZ_DIR = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(_
 source_file = os.path.join(OSS_FUZZ_DIR, "tools/scripts/wolfi-packages.txt")
 target_folder = os.path.join(OSS_FUZZ_DIR, "projects/")
 
-output_integrated = os.path.join(OSS_FUZZ_DIR, "tools/scripts/integrated-packages.txt")
-output_not_integrated = os.path.join(OSS_FUZZ_DIR, "tools/scripts/not-integrated-packages.txt")
+output_dir = os.path.join(OSS_FUZZ_DIR, "tools/scripts/script_output")
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
 
+output_integrated = os.path.join(output_dir, "integrated.txt")
+output_not_integrated = os.path.join(output_dir, "not_integrated.txt")
 with open(source_file, "r") as f:
     packages = f.read().splitlines()
 

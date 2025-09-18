@@ -9,7 +9,7 @@ tools/ossfuzz-onboarding/.env
 .gdb_history
 infra/base-images/base-builder/indexer/indexer
 infra/base-images/base-builder/indexer/fuzzing_engine.a
-tools/scripts/projects_by_language/
+/tools/scripts/script_output
 
 # IntelliJ IDEA
 /.idea

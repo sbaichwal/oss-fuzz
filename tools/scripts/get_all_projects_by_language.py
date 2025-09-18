@@ -2,7 +2,7 @@ import os
 
 OSS_FUZZ_DIR = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 target_dir =  os.path.join(OSS_FUZZ_DIR, "projects/")
-output_dir = os.path.join(OSS_FUZZ_DIR, f"tools/scripts/projects_by_language")
+output_dir = os.path.join(OSS_FUZZ_DIR, f"tools/scripts/script_output/projects_by_language")
 
 languages = []
 projects = []

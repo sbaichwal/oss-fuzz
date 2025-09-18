@@ -4,7 +4,7 @@ OSS_FUZZ_DIR = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(_
 
 target_dir =  os.path.join(OSS_FUZZ_DIR, "projects/")
 temp_dir =  os.path.join(OSS_FUZZ_DIR, "temp_projects/")
-source_file =  os.path.join(OSS_FUZZ_DIR, "tools/scripts/projects_by_language/python_projects.txt")
+source_file =  os.path.join(OSS_FUZZ_DIR, "tools/scripts/script_output/projects_by_language/python_projects.txt")
 
 with open(source_file, "r") as f:
     desired_packages = f.read().splitlines()
