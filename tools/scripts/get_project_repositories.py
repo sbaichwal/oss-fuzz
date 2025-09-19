@@ -8,7 +8,7 @@ if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 output_file = os.path.join(output_dir, "project_repositories.txt")
 
-with open(output_file, "w") as out_f:
+with open(output_file, "w") as f_out:
     for project in sorted(os.listdir(target_dir)): 
         project_path = os.path.join(target_dir, project)
         if os.path.isdir(project_path):
@@ -19,7 +19,7 @@ with open(output_file, "w") as out_f:
                     for line in yaml_content:
                         if line.startswith("main_repo:"):
                             repository = line.split(":", 1)[1].strip().replace('"', '').replace("'", "")
-                            out_f.write(f"{project}: {repository}\n")
+                            f_out.write(f"{project}: {repository}\n")
             else:
                 print(f"Warning: {project_yaml} does not exist.")
         else:

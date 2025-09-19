@@ -1,0 +1,3 @@
+# tools/scripts/requirements.txt
+PyGithub
+dotenv

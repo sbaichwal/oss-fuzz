@@ -1,5 +1,6 @@
 /.vscode/
 tools/ossfuzz-onboarding/.env
+tools/scripts/.env
 *.pyc
 /build/
 *~
